@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+.dev.vars
+.local_data/
+engine/build_wasm/
+engine/gamefiles/
+engine/vendor/librw/external/wgpu-native/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

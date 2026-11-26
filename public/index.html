@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
+  <title>Grand Theft Auto: Vice City — Vice Net Edition</title>
+  <style>
+    :root {
+      --bg-black: #090810;
+      --bg-obsidian: #13111E;
+      --bg-panel: rgba(19, 17, 30, 0.92);
+      --bg-inset: #0b0a14;
+      --border-glass: rgba(255, 42, 133, 0.28);
+      --border-cyan: rgba(0, 229, 255, 0.34);
+      --pink: #FF2A85;
+      --pink-bright: #FF6EB0;
+      --pink-dim: rgba(255, 42, 133, 0.16);
+      --cyan: #00E5FF;
+      --cyan-bright: #7AF2FF;
+      --cyan-dim: rgba(0, 229, 255, 0.14);
+      --violet: #9333EA;
+      --violet-dim: rgba(147, 51, 234, 0.20);
+      --pager-bg: #0c0918;
+      --pager-lcd: #00E5FF;
+      --pager-dim: #7b6aa8;
+      --vc-mint: #34D399;
+      --danger: #FB7185;
+      --text-main: #F8F5FF;
+      --text-muted: #A9A2C2;
+      --font-display: 'Impact', 'Haettenschweiler', 'Arial Narrow', 'Bahnschrift', sans-serif;
+      --font-ui: 'Bahnschrift', 'Segoe UI', 'Arial', sans-serif;
+      --font-mono: 'Consolas', 'Courier New', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-black);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      user-select: none;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    /* Fullscreen WebGL Canvas */
+    #canvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      background: #000;
+      outline: none;
+      cursor: crosshair;
+    }
+
+    /* Shared Vice Net Controls */
+    .vc-input,
+    .vc-select {
+      width: 100%;
+      background: var(--bg-inset);
+      color: var(--text-main);
+      border: 1px solid rgba(169, 162, 194, 0.28);
+      border-radius: 3px;
+      padding: 8px 10px;
+      font-family: var(--font-ui);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.14s ease, box-shadow 0.14s ease;
+    }
+
+    .vc-input:focus,
+    .vc-select:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.15);
+    }
+
+    .vc-btn {
+      background: rgba(27, 23, 44, 0.92);
+      color: var(--text-main);
+      border: 1px solid rgba(169, 162, 194, 0.34);
+      border-radius: 3px;
+      padding: 8px 14px;
+      font-family: var(--font-display);
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+    }
+
+    .vc-btn:hover:not(:disabled) {
+      background: rgba(42, 31, 68, 0.96);
+      border-color: var(--cyan);
+      color: var(--cyan-bright);
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.18);
+    }
+
+    .vc-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .vc-btn.accent {
+      background: linear-gradient(135deg, var(--pink) 0%, #D91B73 100%);
+      color: #fff;
+      border-color: var(--pink-bright);
+      box-shadow: 0 0 16px rgba(255, 42, 133, 0.28);
+    }
+
+    .vc-btn.accent:hover:not(:disabled) {
+      background: linear-gradient(135deg, var(--pink-bright) 0%, var(--pink) 100%);
+      border-color: #fff;
+      color: #fff;
+      box-shadow: 0 0 22px rgba(255, 42, 133, 0.45);
+    }
+
+    .vc-btn.cyan {
+      background: linear-gradient(135deg, #00B8D4 0%, #0891B2 100%);
+      color: #060911;
+      border-color: var(--cyan);
+    }
+
+    .vc-btn.cyan:hover:not(:disabled) {
+      background: var(--cyan);
+      color: #05070e;
+      box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+    }
+
+    .vc-btn.danger {
+      border-color: rgba(251, 113, 133, 0.48);
+      color: #FDA4AF;
+    }
+
+    .vc-btn.danger:hover:not(:disabled) {
+      background: #E11D48;
+      border-color: #FDA4AF;
+      color: #fff;
+      box-shadow: 0 0 14px rgba(225, 29, 72, 0.35);
+    }
+
+    .vc-btn.active {
+      background: var(--pink-dim);
+      border-color: var(--pink);
+      color: var(--pink-bright);
+      box-shadow: 0 0 12px rgba(255, 42, 133, 0.22);
+    }
+
+    .vc-btn.small {
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 5px;
+      font-weight: 700;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-main);
+      cursor: pointer;
+    }
+
+    .check-row input[type="checkbox"] {
+      accent-color: var(--pink);
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+    }
+
+    /* ================================================================
+       Boot / Splash Gate — 1986 Miami Neon Glass
+       ================================================================ */
+    #splash-gate {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(255, 42, 133, 0.22), transparent 46%),
+        radial-gradient(circle at 82% 78%, rgba(0, 229, 255, 0.18), transparent 46%),
+        radial-gradient(circle at 50% 50%, rgba(147, 51, 234, 0.14), transparent 62%),
+        linear-gradient(180deg, #090810 0%, #110d1e 60%, #090810 100%);
+    }
+
+    #splash-gate::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(0, 229, 255, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 42, 133, 0.04) 1px, transparent 1px);
+      background-size: 36px 36px;
+    }
+
+    .splash-frame {
+      position: relative;
+      width: 100%;
+      max-width: 940px;
+      max-height: 92vh;
+      overflow-y: auto;
+      background: rgba(19, 17, 30, 0.94);
+      backdrop-filter: blur(12px);
+      border: 2px solid var(--pink);
+      border-radius: 4px;
+      box-shadow:
+        0 26px 80px rgba(0, 0, 0, 0.88),
+        0 0 36px rgba(255, 42, 133, 0.18),
+        inset 0 0 0 1px rgba(0, 229, 255, 0.16);
+    }
+
+    .splash-banner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 24px 14px;
+      background: linear-gradient(90deg, #100c1d 0%, #1b1230 58%, #0e1628 100%);
+      border-bottom: 2px solid var(--pink);
+      position: relative;
+    }
+
+    .splash-banner::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -4px;
+      height: 2px;
+      background: linear-gradient(90deg, var(--cyan), var(--violet), var(--pink));
+      opacity: 0.7;
+    }
+
+    .brand-title {
+      font-family: var(--font-display);
+      font-size: 35px;
+      line-height: 0.96;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #fff;
+      text-shadow: 2px 2px 0 #090810, 0 0 20px rgba(255, 42, 133, 0.4);
+    }
+
+    .brand-title span {
+      color: var(--pink);
+      text-shadow: 0 0 18px rgba(255, 42, 133, 0.55);
+    }
+
+    .brand-sub {
+      margin-top: 5px;
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--cyan);
+    }
+
+    .cache-pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: 3px;
+      border: 1px solid rgba(169, 162, 194, 0.32);
+      background: var(--bg-inset);
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    .cache-pill.cached {
+      border-color: var(--cyan);
+      color: var(--cyan-bright);
+      background: rgba(0, 229, 255, 0.1);
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.16);
+    }
+
+    .splash-body {
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 780px) {
+      .splash-body {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .dossier-box {
+      background: rgba(14, 12, 24, 0.88);
+      border: 1px solid rgba(147, 51, 234, 0.35);
+      border-radius: 4px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .dossier-heading {
+      font-family: var(--font-display);
+      font-size: 16px;
+      letter-spacing: 0.09em;
+      color: var(--pink-bright);
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(255, 42, 133, 0.28);
+      padding-bottom: 6px;
+    }
+
+    .mode-switch {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .controls-strip {
+      padding: 10px 12px;
+      background: rgba(9, 8, 16, 0.85);
+      border-left: 3px solid var(--cyan);
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--text-muted);
+    }
+
+    .controls-strip b {
+      color: var(--pink-bright);
+    }
+
+    .splash-footer {
+      padding: 14px 24px 20px;
+      border-top: 1px solid rgba(255, 42, 133, 0.28);
+      background: rgba(12, 10, 21, 0.98);
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .progress-bar-track {
+      width: 100%;
+      height: 14px;
+      background: var(--bg-inset);
+      border: 1px solid var(--cyan);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: repeating-linear-gradient(
+        -45deg,
+        var(--pink) 0px,
+        var(--pink) 10px,
+        var(--violet) 10px,
+        var(--violet) 20px
+      );
+      transition: width 0.1s linear;
+    }
+
+    .progress-row {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--cyan-bright);
+    }
+
+    .launch-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    #boot-launch-btn {
+      min-width: 240px;
+      padding: 12px 24px;
+      font-size: 18px;
+    }
+
+    .error-banner {
+      padding: 10px 12px;
+      background: rgba(225, 29, 72, 0.16);
+      border: 1px solid var(--danger);
+      border-radius: 3px;
+      color: #FECDD3;
+      font-size: 12px;
+      font-family: var(--font-mono);
+    }
+
+    .info-banner {
+      padding: 10px 12px;
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid var(--cyan);
+      border-radius: 3px;
+      color: var(--cyan-bright);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ================================================================
+       Top-Center Auto-Hiding Vice Cellular / Pager Bar
+       ================================================================ */
+    #hud-layer {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    #vice-pager {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 344px;
+      max-width: calc(100vw - 28px);
+      pointer-events: auto;
+      background: linear-gradient(180deg, rgba(24, 20, 40, 0.96) 0%, rgba(11, 9, 20, 0.96) 100%);
+      border: 2px solid var(--pink);
+      border-radius: 4px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.78), 0 0 22px rgba(255, 42, 133, 0.22);
+      opacity: 1;
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+
+    #vice-pager.pager-idle-hidden {
+      opacity: 0;
+      transform: translate(-50%, -14px);
+      pointer-events: none;
+    }
+
+    .pager-bezel-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 6px 8px;
+      background: #090810;
+      border-bottom: 1px solid rgba(255, 42, 133, 0.34);
+    }
+
+    .pager-brand {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-display);
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      color: var(--pink-bright);
+    }
+
+    .pager-led {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+      display: inline-block;
+    }
+
+    .pager-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    .pager-mini-btn {
+      background: #1a162b;
+      color: var(--text-main);
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      border-radius: 2px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 6px;
+      cursor: pointer;
+    }
+
+    .pager-mini-btn:hover {
+      border-color: var(--pink);
+      color: var(--pink-bright);
+    }
+
+    .pager-lcd {
+      margin: 6px;
+      padding: 8px;
+      background:
+        repeating-linear-gradient(
+          0deg,
+          rgba(0, 0, 0, 0.22) 0px,
+          rgba(0, 0, 0, 0.22) 1px,
+          transparent 1px,
+          transparent 3px
+        ),
+        var(--pager-bg);
+      border: 1px solid rgba(0, 229, 255, 0.28);
+      color: var(--pager-lcd);
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .pager-status-line {
+      font-weight: 700;
+      border-bottom: 1px dashed rgba(0, 229, 255, 0.3);
+      padding-bottom: 4px;
+      margin-bottom: 5px;
+      letter-spacing: 0.04em;
+      color: var(--pink-bright);
+    }
+
+    .pager-peers {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 6px;
+      padding-bottom: 5px;
+      border-bottom: 1px dashed rgba(0, 229, 255, 0.3);
+    }
+
+    .pager-peer-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .pager-peer-row.self {
+      color: #ffffff;
+    }
+
+    .badge-p2p {
+      font-style: normal;
+      color: var(--vc-mint);
+    }
+
+    .badge-relay {
+      font-style: normal;
+      color: var(--pink-bright);
+    }
+
+    .pager-log {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: 68px;
+      overflow: hidden;
+    }
+
+    .pager-msg.accent { color: var(--cyan-bright); }
+    .pager-msg.warn { color: #FDA4AF; }
+    .pager-msg.chat { color: #F9A8D4; }
+    .pager-msg.muted { color: var(--pager-dim); }
+
+    .pager-footer-hints {
+      padding: 4px 8px 6px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .pager-footer-hints b {
+      color: var(--cyan);
+    }
+
+    #pointer-hint {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      background: rgba(9, 8, 16, 0.88);
+      border: 1px solid var(--cyan);
+      border-radius: 3px;
+      color: var(--cyan-bright);
+      padding: 6px 14px;
+      font-family: var(--font-display);
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: 0 0 18px rgba(0, 229, 255, 0.22);
+    }
+
+    /* ================================================================
+       5-Tab Vice Net Pause Overlay (Never pauses MP world!)
+       ================================================================ */
+    #pause-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(9, 8, 16, 0.84);
+      backdrop-filter: blur(8px);
+    }
+
+    .pause-shell {
+      width: 100%;
+      max-width: 1080px;
+      height: min(88vh, 750px);
+      display: flex;
+      flex-direction: column;
+      background: rgba(19, 17, 30, 0.96);
+      border: 2px solid var(--pink);
+      border-radius: 4px;
+      box-shadow:
+        0 26px 85px rgba(0, 0, 0, 0.92),
+        0 0 36px rgba(255, 42, 133, 0.2);
+    }
+
+    .pause-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 18px;
+      background: linear-gradient(90deg, #090810 0%, #1a122e 65%, #0b1424 100%);
+      border-bottom: 2px solid var(--pink);
+    }
+
+    .pause-title {
+      font-family: var(--font-display);
+      font-size: 24px;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+
+    .pause-title span {
+      color: var(--pink);
+      text-shadow: 0 0 12px rgba(255, 42, 133, 0.5);
+    }
+
+    .pause-tabs {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      background: #0d0b17;
+      border-bottom: 1px solid rgba(0, 229, 255, 0.26);
+    }
+
+    .vc-tab-btn {
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      border-right: 1px solid rgba(169, 162, 194, 0.16);
+      padding: 11px 8px;
+      font-family: var(--font-display);
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.14s ease, color 0.14s ease;
+    }
+
+    .vc-tab-btn:last-child {
+      border-right: none;
+    }
+
+    .vc-tab-btn:hover {
+      background: rgba(255, 42, 133, 0.12);
+      color: var(--cyan-bright);
+    }
+
+    .vc-tab-btn.active {
+      background: linear-gradient(90deg, var(--pink) 0%, #c026d3 100%);
+      color: #fff;
+    }
+
+    .pause-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 820px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .pause-tabs { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .panel-card {
+      background: rgba(15, 13, 25, 0.9);
+      border: 1px solid rgba(147, 51, 234, 0.34);
+      border-radius: 4px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-card h3 {
+      font-family: var(--font-display);
+      font-size: 15px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--pink-bright);
+      border-bottom: 1px solid rgba(255, 42, 133, 0.25);
+      padding-bottom: 5px;
+    }
+
+    .row-flex {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .row-flex > .grow {
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .list-scroll {
+      max-height: 210px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .room-row,
+    .save-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: var(--bg-inset);
+      border: 1px solid rgba(0, 229, 255, 0.18);
+      border-radius: 3px;
+    }
+
+    .room-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .empty-note {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 10px;
+      background: var(--bg-inset);
+      border: 1px dashed rgba(169, 162, 194, 0.3);
+      border-radius: 3px;
+    }
+
+    .roster-card {
+      padding: 8px 10px;
+      background: var(--bg-inset);
+      border: 1px solid rgba(147, 51, 234, 0.3);
+      border-radius: 3px;
+    }
+
+    .roster-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .slot-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: var(--pink-dim);
+      color: var(--pink-bright);
+      padding: 2px 7px;
+      border: 1px solid var(--pink);
+      border-radius: 2px;
+    }
+
+    .transport-pill {
+      margin-left: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 6px;
+      background: #171427;
+      color: var(--pink-bright);
+      border: 1px solid rgba(255, 42, 133, 0.36);
+      border-radius: 2px;
+    }
+
+    .transport-pill.p2p {
+      color: var(--vc-mint);
+      border-color: var(--vc-mint);
+      background: rgba(52, 211, 153, 0.12);
+    }
+
+    .roster-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .roster-meta b {
+      color: var(--text-main);
+    }
+
+    .chat-box {
+      height: 150px;
+      overflow-y: auto;
+      background: var(--bg-inset);
+      border: 1px solid rgba(0, 229, 255, 0.22);
+      border-radius: 3px;
+      padding: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .chat-line span { color: var(--text-muted); }
+    .chat-line.accent { color: var(--cyan-bright); }
+    .chat-line.warn { color: #FDA4AF; }
+    .chat-line.chat { color: #F9A8D4; }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 7px;
+    }
+
+    .status-line {
+      padding: 8px 10px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      border: 1px solid var(--cyan);
+      border-radius: 3px;
+      background: rgba(0, 229, 255, 0.1);
+      color: var(--cyan-bright);
+    }
+
+    .status-line.err {
+      border-color: var(--danger);
+      background: rgba(225, 29, 72, 0.16);
+      color: #FECDD3;
+    }
+
+    .readonly-dim {
+      opacity: 0.72;
+    }
+
+    .range-row {
+      display: grid;
+      grid-template-columns: 160px 1fr 54px;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+    }
+
+    .range-row input[type="range"] {
+      accent-color: var(--pink);
+      width: 100%;
+    }
+
+    .range-val {
+      font-family: var(--font-mono);
+      text-align: right;
+      color: var(--cyan-bright);
+    }
+
+    .id-badge-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px;
+      background: var(--bg-inset);
+      border: 1px solid var(--cyan);
+      border-radius: 3px;
+    }
+
+    .id-avatar {
+      width: 58px;
+      height: 58px;
+      background: radial-gradient(circle at 35% 30%, #2a1844, #090810);
+      border: 2px solid var(--pink);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-size: 24px;
+      color: var(--cyan);
+      box-shadow: 0 0 16px rgba(255, 42, 133, 0.25);
+    }
+
+    .save-card-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="1280" height="720" tabindex="0"></canvas>
+
+  <!-- ===================================================================
+       BOOT / SPLASH GATE — 1986 VICE NET
+       =================================================================== -->
+  <div id="splash-gate">
+    <div class="splash-frame">
+      <div class="splash-banner">
+        <div>
+          <div class="brand-title">GRAND THEFT AUTO: <span>VICE CITY</span></div>
+          <div class="brand-sub">Vice Net Edition • 1–4P WebRTC Co-op + Cloud Safehouse</div>
+        </div>
+        <div id="boot-cache-tag" class="cache-pill">CHECKING BROWSER VFS CACHE...</div>
+      </div>
+
+      <div class="splash-body">
+        <div class="dossier-box">
+          <div class="dossier-heading">1. Session &amp; Identity</div>
+
+          <div>
+            <span class="field-label">Connection Mode</span>
+            <div class="mode-switch">
+              <button type="button" class="vc-btn active" data-boot-mode="offline">Play Offline</button>
+              <button type="button" class="vc-btn" data-boot-mode="host">Host Co-op</button>
+              <button type="button" class="vc-btn" data-boot-mode="client">Join Co-op</button>
+            </div>
+          </div>
+
+          <div class="row-flex">
+            <div class="grow">
+              <label class="field-label" for="boot-player-name">Display Name</label>
+              <input id="boot-player-name" class="vc-input" type="text" maxlength="24" value="Tommy" />
+            </div>
+          </div>
+
+          <div>
+            <label class="field-label" for="boot-skin-select">Character Model</label>
+            <select id="boot-skin-select" class="vc-select"></select>
+          </div>
+
+          <label class="check-row">
+            <input id="boot-load-cuts" type="checkbox" />
+            <span>Include Cutscene Pack (<code>anim/cuts.img</code>, ~85 MiB)</span>
+          </label>
+
+          <div class="controls-strip">
+            <b>Controls:</b> <b>WASD</b> Move / Drive • <b>Mouse</b> Aim &amp; Look • <b>F</b> Enter/Exit Driver Seat •
+            <b>G</b> Enter Nearest Vehicle as <b>Passenger</b> • <b>Tab / F1 / F9</b> Vice Net Menu
+          </div>
+        </div>
+
+        <div class="dossier-box">
+          <div class="dossier-heading">2. Vice Net Co-op Setup</div>
+
+          <div id="boot-port-wrap" hidden>
+            <label class="field-label" for="boot-room-port">Room Port (1024 - 65535)</label>
+            <input id="boot-room-port" class="vc-input" type="number" min="1024" max="65535" value="7778" />
+          </div>
+
+          <div id="boot-host-fields" hidden>
+            <div style="margin-bottom: 10px;">
+              <label class="field-label" for="boot-room-name">Room Title</label>
+              <input id="boot-room-name" class="vc-input" type="text" maxlength="48" value="Tommy's Vice City" />
+            </div>
+          </div>
+
+          <div id="boot-mode-fields">
+            <div style="margin-bottom: 10px;">
+              <label class="field-label" for="boot-coop-mode">Game Mode</label>
+              <select id="boot-coop-mode" class="vc-select">
+                <option value="story_coop">Story Mode / Story Co-op</option>
+                <option value="open_sandbox">Free Roam Sandbox (No Cutscenes)</option>
+              </select>
+            </div>
+            <label class="check-row">
+              <input id="boot-open-islands" type="checkbox" />
+              <span>Open All Bridges &amp; Mainland (Vice Beach, Starfish, Prawn &amp; Mainland unlocked)</span>
+            </label>
+          </div>
+
+          <div id="boot-rooms-box" hidden>
+            <div class="row-flex" style="justify-content: space-between;">
+              <span class="field-label" style="margin:0;">Active Vice Net Rooms</span>
+              <button id="boot-refresh-rooms" type="button" class="vc-btn small">Refresh</button>
+            </div>
+            <div id="boot-rooms-list" class="list-scroll"></div>
+          </div>
+
+          <div class="controls-strip" style="margin-top: auto;">
+            <b>1986 Vice Net:</b> Start offline anytime or open/join a 1–4P WebRTC co-op session live from the <b>[TAB]</b> Vice Net menu.
+          </div>
+        </div>
+      </div>
+
+      <div class="splash-footer">
+        <div id="boot-error" class="error-banner" hidden></div>
+
+        <div id="boot-progress-wrap" hidden>
+          <div class="progress-row" style="margin-bottom: 5px;">
+            <span id="boot-progress-text">Preparing...</span>
+            <span id="boot-progress-meta">0%</span>
+          </div>
+          <div class="progress-bar-track">
+            <div id="boot-progress-fill" class="progress-bar-fill"></div>
+          </div>
+        </div>
+
+        <div class="launch-row">
+          <div style="font-size: 12px; color: var(--text-muted);">
+            Assets verify via SHA-256 &amp; persist in browser IndexedDB (<code>gtavcweb_vfs_v1</code>).
+          </div>
+          <button id="boot-launch-btn" type="button" class="vc-btn accent">LAUNCH VICE CITY</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       IN-GAME HUD + TOP-CENTER AUTO-HIDING VICE CELLULAR / PAGER BAR
+       =================================================================== -->
+  <div id="hud-layer" hidden>
+    <aside id="vice-pager">
+      <div class="pager-bezel-top">
+        <div class="pager-brand">
+          <span class="pager-led"></span>
+          <span>VICE CELLULAR</span>
+        </div>
+        <div class="pager-actions">
+          <button id="pager-menu-btn" type="button" class="pager-mini-btn">[MENU]</button>
+          <button id="pager-minimize-btn" type="button" class="pager-mini-btn">[-]</button>
+        </div>
+      </div>
+      <div id="pager-body">
+        <div class="pager-lcd">
+          <div id="pager-room-status" class="pager-status-line">OFFLINE</div>
+          <div id="pager-peers" class="pager-peers"></div>
+          <div id="pager-log" class="pager-log"></div>
+        </div>
+      </div>
+      <div class="pager-footer-hints">
+        <span><b>[TAB]</b> Menu / Cheats</span>
+        <span><b>[G]</b> Passenger Seat</span>
+      </div>
+    </aside>
+
+    <div id="pointer-hint" hidden>
+      CLICK GAME VIEW TO AIM • [TAB] / [F1] / [F9] VICE NET MENU
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       5-TAB VICE NET PAUSE OVERLAY (NEVER PAUSES MULTIPLAYER WORLD)
+       =================================================================== -->
+  <div id="pause-overlay" hidden>
+    <div class="pause-shell">
+      <div class="pause-header">
+        <div class="pause-title">GRAND THEFT AUTO: <span>VICE CITY</span> // VICE NET</div>
+        <button id="pause-resume-btn" type="button" class="vc-btn accent">RESUME GAME</button>
+      </div>
+
+      <nav class="pause-tabs">
+        <button type="button" class="vc-tab-btn active" data-tab="vice-net">1. Vice Net</button>
+        <button type="button" class="vc-tab-btn" data-tab="identity">2. Identity &amp; Skin</button>
+        <button type="button" class="vc-tab-btn" data-tab="safehouse">3. Safehouse Saves</button>
+        <button type="button" class="vc-tab-btn" data-tab="cheats">4. Cheats &amp; Spawner</button>
+        <button type="button" class="vc-tab-btn" data-tab="options">5. Engine Options</button>
+      </nav>
+
+      <div class="pause-content">
+        <!-- TAB 1: VICE NET -->
+        <section class="vc-tab-panel" data-tab-panel="vice-net">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Room Control</h3>
+              <div class="row-flex" style="justify-content: space-between;">
+                <span id="net-connection-badge" class="slot-tag">OFFLINE</span>
+                <div class="row-flex">
+                  <button id="net-copy-invite-btn" type="button" class="vc-btn cyan small">Copy Invite Link</button>
+                  <button id="net-leave-btn" type="button" class="vc-btn danger small">Disconnect</button>
+                </div>
+              </div>
+              <div class="row-flex">
+                <div class="grow">
+                  <label class="field-label" for="net-room-name">Room Name</label>
+                  <input id="net-room-name" class="vc-input" type="text" maxlength="48" />
+                </div>
+                <div style="width: 110px;">
+                  <label class="field-label" for="net-room-port">Port</label>
+                  <input id="net-room-port" class="vc-input" type="number" min="1024" max="65535" value="7778" />
+                </div>
+              </div>
+              <div>
+                <label class="field-label" for="net-coop-mode">Co-op Mode</label>
+                <select id="net-coop-mode" class="vc-select">
+                  <option value="story_coop">Story Co-op</option>
+                  <option value="open_sandbox">Free Roam Sandbox</option>
+                </select>
+              </div>
+              <div class="row-flex">
+                <button id="net-host-btn" type="button" class="vc-btn accent">Host Room</button>
+                <button id="net-join-btn" type="button" class="vc-btn">Join Port</button>
+              </div>
+
+              <div id="net-host-only-controls">
+                <label class="check-row">
+                  <input id="net-open-islands-toggle" type="checkbox" />
+                  <span>Host Unlock: Open All Bridges &amp; Mainland</span>
+                </label>
+              </div>
+
+              <div class="controls-strip">
+                <b>Co-op Vehicle Controls:</b> Press <b>[F]</b> for Driver Seat, or press <b>[G]</b> near any teammate's ride to hop in as <b>Passenger</b>!
+              </div>
+
+              <div class="row-flex" style="justify-content: space-between; margin-top: 4px;">
+                <span class="field-label" style="margin:0;">Public Rooms (/api/rooms)</span>
+                <button id="net-refresh-rooms-btn" type="button" class="vc-btn small">Refresh</button>
+              </div>
+              <div id="net-rooms-list" class="list-scroll"></div>
+            </div>
+
+            <div class="panel-card">
+              <h3>Active Crew Roster &amp; Cellular Chat</h3>
+              <div id="net-peer-roster" class="list-scroll" style="max-height: 230px;"></div>
+
+              <span class="field-label" style="margin-top: 6px;">Vice Cellular Feed</span>
+              <div id="net-chat-log" class="chat-box"></div>
+              <form id="net-chat-form" class="row-flex">
+                <input id="net-chat-input" class="vc-input grow" type="text" maxlength="140" placeholder="Send cellular message to room..." />
+                <button type="submit" class="vc-btn accent small">Send</button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: IDENTITY & SKIN -->
+        <section class="vc-tab-panel" data-tab-panel="identity" hidden>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Customize Vice City Identity</h3>
+              <div>
+                <label class="field-label" for="id-player-name">Display Name</label>
+                <input id="id-player-name" class="vc-input" type="text" maxlength="24" />
+              </div>
+              <div>
+                <label class="field-label" for="id-skin-select">Character Model (Ped ID 0..129)</label>
+                <select id="id-skin-select" class="vc-select"></select>
+              </div>
+              <button id="id-apply-btn" type="button" class="vc-btn accent">Apply Identity Live</button>
+            </div>
+
+            <div class="panel-card">
+              <h3>Live Preview</h3>
+              <div class="id-badge-card">
+                <div class="id-avatar">VC</div>
+                <div>
+                  <div id="id-preview-name" style="font-family: var(--font-display); font-size: 20px; color: #fff;">Tommy</div>
+                  <div id="id-preview-meta" class="room-sub">Tommy Vercetti (ID 0)</div>
+                </div>
+              </div>
+              <div class="controls-strip">
+                Applying updates your local ped model immediately via <code>_mp_exec_cheat(22, modelId)</code> and broadcasts your Display Name &amp; Skin across the Vice Net co-op room.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: SAFEHOUSE SAVES -->
+        <section class="vc-tab-panel" data-tab-panel="safehouse" hidden>
+          <div id="safehouse-cuts-banner" class="info-banner" style="margin-bottom: 12px;" hidden>
+            <span>Story Co-op tip: Cutscene Pack (<code>anim/cuts.img</code>, ~85 MiB) is not mounted yet.</span>
+            <button id="safehouse-load-cuts-btn" type="button" class="vc-btn cyan small">Download &amp; Mount Cutscenes</button>
+          </div>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Vice Net Cloud Account</h3>
+              <div id="auth-logged-out">
+                <div style="margin-bottom: 8px;">
+                  <label class="field-label" for="auth-username">Username</label>
+                  <input id="auth-username" class="vc-input" type="text" maxlength="24" placeholder="3-24 chars" />
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <label class="field-label" for="auth-password">Password</label>
+                  <input id="auth-password" class="vc-input" type="password" maxlength="128" placeholder="4+ chars" />
+                </div>
+                <div class="row-flex">
+                  <button id="auth-login-btn" type="button" class="vc-btn accent">Sign In</button>
+                  <button id="auth-register-btn" type="button" class="vc-btn">Register</button>
+                </div>
+              </div>
+
+              <div id="auth-logged-in" hidden>
+                <div class="row-flex" style="justify-content: space-between;">
+                  <span>Signed in as <strong id="auth-user-label" style="color: var(--cyan-bright);"></strong></span>
+                  <button id="auth-logout-btn" type="button" class="vc-btn danger small">Sign Out</button>
+                </div>
+              </div>
+
+              <div id="saves-status" class="status-line" hidden></div>
+
+              <h3 style="margin-top: 8px;">Save Current World State</h3>
+              <div class="row-flex">
+                <input id="save-campaign-title" class="vc-input grow" type="text" maxlength="64" placeholder="Ocean View Safehouse Title..." />
+                <button id="save-new-campaign-btn" type="button" class="vc-btn accent">Save New</button>
+              </div>
+
+              <h3 style="margin-top: 8px;">Local PC Save (.b) Import / Export</h3>
+              <div class="row-flex">
+                <button id="local-export-save-btn" type="button" class="vc-btn cyan small">Download GTAVCsf1.b</button>
+                <button id="local-import-save-btn" type="button" class="vc-btn small">Import .b Save</button>
+                <input id="local-import-save-file" type="file" accept=".b" hidden />
+              </div>
+
+              <h3 style="margin-top: 8px;">Session &amp; World Reset</h3>
+              <div class="row-flex">
+                <button id="world-new-game-btn" type="button" class="vc-btn">New Vice City Game</button>
+                <button id="world-restart-btn" type="button" class="vc-btn danger">Restart Session</button>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <h3>Cloud Safehouse Campaigns (SQLite)</h3>
+              <div id="cloud-saves-list" class="list-scroll" style="max-height: 390px;"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 4: CHEATS & SPAWNER -->
+        <section class="vc-tab-panel" data-tab-panel="cheats" hidden>
+          <div id="cheats-authority-note" class="error-banner" style="margin-bottom: 12px;" hidden>
+            CLIENT MODE: World cheats require Host authority. Vehicle &amp; Pickup Spawners forward a spawn request to the Host!
+          </div>
+
+          <div id="cheats-controls-wrap" class="grid-2">
+            <div class="panel-card">
+              <h3>Player &amp; Vehicle Cheats</h3>
+              <div class="btn-grid">
+                <button type="button" class="vc-btn" data-cheat-id="1">Full Health + Fix</button>
+                <button type="button" class="vc-btn" data-cheat-id="2">Full Body Armor</button>
+                <button type="button" class="vc-btn" data-cheat-id="3">+$250,000 Cash</button>
+                <button type="button" class="vc-btn" data-cheat-id="4">All Weapons</button>
+                <button type="button" class="vc-btn" data-cheat-id="5">Wanted Level +</button>
+                <button type="button" class="vc-btn" data-cheat-id="6">Clear Wanted</button>
+                <button type="button" class="vc-btn" data-cheat-id="19">Fix Current Car</button>
+                <button type="button" class="vc-btn" data-cheat-id="20">Flip &amp; Boost Car</button>
+                <button type="button" class="vc-btn accent" data-cheat-id="7">Spawn Rhino Tank</button>
+                <button type="button" class="vc-btn" data-cheat-id="21">Spawn RC Bandit</button>
+                <button type="button" class="vc-btn danger" data-cheat-id="8">Blow Up All Cars</button>
+              </div>
+
+              <h3 style="margin-top: 6px;">Vehicle Spawner (107 Models)</h3>
+              <div class="row-flex">
+                <select id="spawn-vehicle-select" class="vc-select grow"></select>
+                <input id="spawn-vehicle-dist" class="vc-input" type="number" min="3" max="20" value="6" style="width: 72px;" title="Ahead distance (meters)" />
+                <button id="spawn-vehicle-btn" type="button" class="vc-btn accent">Spawn</button>
+              </div>
+
+              <h3 style="margin-top: 6px;">Pickup Spawner</h3>
+              <div class="btn-grid">
+                <button type="button" class="vc-btn small" data-pickup-kind="1" data-pickup-arg="0">Health Pickup</button>
+                <button type="button" class="vc-btn small" data-pickup-kind="2" data-pickup-arg="0">Armor Pickup</button>
+                <button type="button" class="vc-btn small" data-pickup-kind="3" data-pickup-arg="5000">$5,000 Cash</button>
+                <button type="button" class="vc-btn small" data-pickup-kind="4" data-pickup-arg="0">Police Bribe</button>
+                <button type="button" class="vc-btn small" data-pickup-kind="5" data-pickup-arg="0">Adrenaline Pill</button>
+              </div>
+              <div class="row-flex">
+                <select id="spawn-weapon-select" class="vc-select grow"></select>
+                <button id="spawn-weapon-pickup-btn" type="button" class="vc-btn small">Drop Weapon</button>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <h3>Weather &amp; Time Scale</h3>
+              <div class="btn-grid">
+                <button type="button" class="vc-btn small" data-cheat-id="9" data-cheat-p1="0">Sunny</button>
+                <button type="button" class="vc-btn small" data-cheat-id="9" data-cheat-p1="1">Cloudy</button>
+                <button type="button" class="vc-btn small" data-cheat-id="9" data-cheat-p1="2">Rainy</button>
+                <button type="button" class="vc-btn small" data-cheat-id="9" data-cheat-p1="3">Foggy</button>
+                <button type="button" class="vc-btn small" data-cheat-id="10" data-cheat-p1="0">Time 1.0x</button>
+                <button type="button" class="vc-btn small" data-cheat-id="10" data-cheat-p1="1">Fast 2.0x</button>
+                <button type="button" class="vc-btn small" data-cheat-id="10" data-cheat-p1="2">Slow 0.5x</button>
+              </div>
+
+              <h3 style="margin-top: 8px;">World Chaos &amp; Physics Toggles</h3>
+              <div class="btn-grid">
+                <button type="button" class="vc-btn small" data-cheat-id="11" data-cheat-toggle="1">Fast Weather</button>
+                <button type="button" class="vc-btn small" data-cheat-id="12" data-cheat-toggle="1">Ped Mayhem</button>
+                <button type="button" class="vc-btn small" data-cheat-id="13" data-cheat-toggle="1">Everyone Attacks</button>
+                <button type="button" class="vc-btn small" data-cheat-id="14" data-cheat-toggle="1">Peds Have Weapons</button>
+                <button type="button" class="vc-btn small" data-cheat-id="16" data-cheat-toggle="1">Flying Cars</button>
+                <button type="button" class="vc-btn small" data-cheat-id="15" data-cheat-toggle="1">Wheels Only</button>
+                <button type="button" class="vc-btn small" data-cheat-id="17" data-cheat-toggle="1">Strong Grip</button>
+                <button type="button" class="vc-btn small" data-cheat-id="18" data-cheat-toggle="1">Nasty Limbs / Gore</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 5: ENGINE OPTIONS -->
+        <section class="vc-tab-panel" data-tab-panel="options" hidden>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Audio &amp; Display (Live CMenuManager)</h3>
+              <div class="range-row">
+                <label for="opt-music-vol">Music Volume</label>
+                <input id="opt-music-vol" type="range" min="0" max="127" value="96" />
+                <span id="opt-music-val" class="range-val">76%</span>
+              </div>
+              <div class="range-row">
+                <label for="opt-sfx-vol">SFX Volume</label>
+                <input id="opt-sfx-vol" type="range" min="0" max="127" value="110" />
+                <span id="opt-sfx-val" class="range-val">87%</span>
+              </div>
+              <div class="range-row">
+                <label for="opt-radio-station">Radio Station</label>
+                <select id="opt-radio-station" class="vc-select"></select>
+                <span></span>
+              </div>
+              <div class="range-row">
+                <label for="opt-brightness">Brightness</label>
+                <input id="opt-brightness" type="range" min="0" max="384" value="256" />
+                <span id="opt-brightness-val" class="range-val">256</span>
+              </div>
+              <div class="range-row">
+                <label for="opt-draw-dist">Draw Distance LOD</label>
+                <input id="opt-draw-dist" type="range" min="0" max="100" value="60" />
+                <span id="opt-draw-val" class="range-val">60</span>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <h3>Controls, HUD &amp; Browser VFS</h3>
+              <div>
+                <label class="field-label" for="opt-control-method">Control Method</label>
+                <select id="opt-control-method" class="vc-select">
+                  <option value="0">Standard (Mouse + Keyboard)</option>
+                  <option value="1">Classic (Vice City Classic)</option>
+                </select>
+              </div>
+              <label class="check-row"><input id="opt-subtitles" type="checkbox" checked /><span>Subtitles</span></label>
+              <label class="check-row"><input id="opt-widescreen" type="checkbox" checked /><span>Widescreen Aspect</span></label>
+              <label class="check-row"><input id="opt-invert-y" type="checkbox" /><span>Invert Mouse Y</span></label>
+              <label class="check-row"><input id="opt-show-hud" type="checkbox" checked /><span>Show In-Game HUD</span></label>
+
+              <h3 style="margin-top: 8px;">VFS Asset Packs (IndexedDB)</h3>
+              <div class="room-row">
+                <span>Core VFS Pack</span>
+                <span id="opt-core-cache-status" class="transport-pill">--</span>
+              </div>
+              <div class="room-row">
+                <span>Cutscenes (<code>anim/cuts.img</code>)</span>
+                <span id="opt-cuts-cache-status" class="transport-pill">--</span>
+              </div>
+              <div class="row-flex">
+                <button id="opt-load-cuts-btn" type="button" class="vc-btn accent small">Download &amp; Mount Cutscenes</button>
+                <button id="opt-clear-cache-btn" type="button" class="vc-btn danger small">Clear VFS Cache</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="/relay_config.js?v=1"></script>
+  <script src="/asset_loader.js?v=1"></script>
+  <script src="/gtavc_ui.js?v=1"></script>
+</body>
+</html>

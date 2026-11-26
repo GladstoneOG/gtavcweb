@@ -1,0 +1,70 @@
+name: reVC linux cmake wgpu
+
+on:
+  pull_request:
+  push:
+  release:
+    types: published
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        buildtype: [Debug, Release]
+        discord: [OFF, ON]
+
+    name: "WGPU | ${{ matrix.buildtype }}${{ matrix.discord == 'ON' && ' | discord' || '' }}"
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            libopenal-dev \
+            libsndfile1-dev \
+            libmpg123-dev \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            wayland-protocols \
+            libwayland-bin
+
+      - name: Configure (CMake)
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.buildtype }} \
+            -DREVC_VENDORED_LIBRW=ON \
+            -DREVC_AUDIO=OAL \
+            -DREVC_WITH_DISCORD_RPC=${{ matrix.discord }} \
+            -DLIBRW_PLATFORM=WGPU
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Collect artifact name
+        id: artname
+        run: |
+          echo "name=reVC_${{ matrix.buildtype }}_linux-amd64-wgpu-glfw-oal${{ matrix.discord == 'ON' && '-discord' || '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Move binary to gamefiles
+        run: |
+          find build -name reVC -type f -exec cp {} ./gamefiles/ \;
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.artname.outputs.name }}
+          path: ./gamefiles/*
