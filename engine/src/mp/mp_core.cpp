@@ -12,6 +12,7 @@
 #include "Streaming.h"
 #include "Wanted.h"
 #include "Radar.h"
+#include "Script.h"
 #include <cstring>
 #include <cmath>
 
@@ -68,6 +69,7 @@ void MP_Init(int32 localPeerId, bool isHost)
 		gMp.players[i].netVehId = -1;
 		gMp.players[i].seatIdx = -1;
 		gMp.players[i].blipHandle = -1;
+		gMp.players[i].lastDoorVehId = -1;
 	}
 	for (int32 i = 0; i < MP_MAX_SYNCED_VEHICLES; i++) {
 		gMp.vehicles[i].netVehId = -1;
@@ -76,6 +78,9 @@ void MP_Init(int32 localPeerId, bool isHost)
 	for (int32 i = 0; i < MP_MAX_SYNCED_PEDS; i++) {
 		gMp.peds[i].netPedId = -1;
 		gMp.peds[i].ownerPeerId = -1;
+	}
+	if (!isHost && CPools::GetVehiclePool() && CPools::GetPedPool()) {
+		MP_PurgeUnsyncedClientEntities();
 	}
 }
 
@@ -168,11 +173,15 @@ void MP_OnPeerDisconnected(int32 peerId)
 			rp.hasState = false;
 			rp.active = false;
 			rp.peerId = -1;
+			rp.lastDoorVehId = -1;
+			rp.lastDoorCode = 0;
 		}
 	}
 	for (int32 i = 0; i < MP_MAX_SYNCED_VEHICLES; i++) {
 		if (gMp.vehicles[i].active && gMp.vehicles[i].ownerPeerId == peerId) {
-			gMp.vehicles[i].ownerPeerId = gMp.isHost ? gMp.localPeerId : -1;
+			if (gMp.vehicles[i].driverPeerId == (uint8)peerId)
+				gMp.vehicles[i].driverPeerId = 0;
+			gMp.vehicles[i].ownerPeerId = gMp.isHost ? gMp.localPeerId : 1;
 			if (gMp.isHost && gMp.vehicles[i].veh && MP_IsPoolVehicleValid(gMp.vehicles[i].veh)) {
 				gMp.vehicles[i].veh->SetStatus(STATUS_ABANDONED);
 			}
@@ -237,8 +246,10 @@ void MP_PushNetPacket(int32 fromPeerId, const uint8 *data, int32 len)
 	case MP_PKT_WEATHER_TIME:  MP_HandleWeatherTimePacket(fromPeerId, data, len); break;
 	case MP_PKT_PLAYER_META:   MP_HandlePlayerMetaPacket(fromPeerId, data, len); break;
 	case MP_PKT_SPAWN_REQ:     MP_HandleSpawnReqPacket(fromPeerId, data, len); break;
-	case MP_PKT_REMOTE_CAR:    MP_HandleRemoteCarPacket(fromPeerId, data, len); break;
-	case MP_PKT_WORLD_RESET:   MP_HandleWorldResetPacket(fromPeerId, data, len); break;
+	case MP_PKT_REMOTE_CAR:     MP_HandleRemoteCarPacket(fromPeerId, data, len); break;
+	case MP_PKT_WORLD_RESET:    MP_HandleWorldResetPacket(fromPeerId, data, len); break;
+	case MP_PKT_VEHICLE_REMOVE: MP_HandleVehicleRemovePacket(fromPeerId, data, len); break;
+	case MP_PKT_PED_REMOVE:     MP_HandlePedRemovePacket(fromPeerId, data, len); break;
 	default: break;
 	}
 }
@@ -252,6 +263,14 @@ void MP_TickBeforeGame(float dt)
 		if (gMp.players[i].active) activePeers++;
 	}
 	CTimer::ms_bDisableUserPause = (activePeers > 0 || gMp.uiPauseBlocked);
+
+	if (MP_IsClientSession()) {
+		uint32 now = CTimer::GetTimeInMilliseconds();
+		if (now - gMp.lastPurgeMs > 400) {
+			gMp.lastPurgeMs = now;
+			MP_PurgeUnsyncedClientEntities();
+		}
+	}
 
 	MP_UpdateRemotePlayersBefore(dt);
 	MP_TickVehiclesBefore(dt);
@@ -310,11 +329,30 @@ float MP_LerpAngle(float a, float b, float t)
 	return a + diff * t;
 }
 
+bool MP_IsClientSession(void)
+{
+	return gMp.initialized && !gMp.isHost;
+}
+
 bool MP_IsRemotePlayerPed(const CPed *ped)
 {
 	if (!gMp.initialized || !ped) return false;
 	for (int32 i = 0; i < MP_MAX_PLAYERS; i++) {
 		if (gMp.players[i].active && gMp.players[i].ped == ped)
+			return true;
+	}
+	return false;
+}
+
+bool MP_IsSyncedPed(const CPed *ped)
+{
+	if (!gMp.initialized || !ped) return false;
+	for (int32 i = 0; i < MP_MAX_SYNCED_PEDS; i++) {
+		if (gMp.peds[i].active && gMp.peds[i].ped == ped)
+			return true;
+	}
+	for (int32 i = 0; i < MP_MAX_SYNCED_VEHICLES; i++) {
+		if (gMp.vehicles[i].active && gMp.vehicles[i].npcDriverPed == ped)
 			return true;
 	}
 	return false;
@@ -330,13 +368,93 @@ bool MP_IsSyncedVehicle(const CVehicle *veh)
 	return false;
 }
 
+bool MP_IsVehicleOccupiedByPlayer(const CVehicle *veh)
+{
+	if (!veh) return false;
+	CPlayerPed *local = FindPlayerPed();
+	if (local && local->m_pMyVehicle == veh)
+		return true;
+	if (!gMp.initialized) return false;
+	for (int32 i = 0; i < MP_MAX_PLAYERS; i++) {
+		const MpRemotePlayer &rp = gMp.players[i];
+		if (!rp.active) continue;
+		if (rp.ped && rp.ped->m_pMyVehicle == veh) return true;
+		if (rp.netVehId >= 0 && MP_GetVehiclePtrByNetId(rp.netVehId) == veh) return true;
+	}
+	return false;
+}
+
+void MP_PurgeUnsyncedClientEntities(void)
+{
+	if (!MP_IsClientSession()) return;
+	CPool<CVehicle, CAutomobile> *vPool = CPools::GetVehiclePool();
+	CPool<CPed, CPlayerPed> *pPool = CPools::GetPedPool();
+	if (!vPool || !pPool) return;
+
+	bool isFreeRoam = (gMp.freeRoam || CTheScripts::ScriptToLoad == 1);
+	CPlayerPed *local = FindPlayerPed();
+	if (vPool) {
+		for (int32 idx = vPool->GetSize() - 1; idx >= 0; idx--) {
+			CVehicle *v = vPool->GetSlot(idx);
+			if (!v) continue;
+			if (v->VehicleCreatedBy != RANDOM_VEHICLE && v->VehicleCreatedBy != PARKED_VEHICLE &&
+			    !(isFreeRoam && v->VehicleCreatedBy == MISSION_VEHICLE))
+				continue;
+			if (MP_IsSyncedVehicle(v) || MP_IsVehicleOccupiedByPlayer(v))
+				continue;
+			if (v->pDriver && v->pDriver != local && !MP_IsRemotePlayerPed(v->pDriver)) {
+				CPed *drv = v->pDriver;
+				v->RemoveDriver();
+				if (!MP_IsSyncedPed(drv)) {
+					CWorld::Remove(drv);
+					CWorld::RemoveReferencesToDeletedObject(drv);
+					delete drv;
+				}
+			}
+			for (int32 s = 0; s < (int32)ARRAY_SIZE(v->pPassengers); s++) {
+				CPed *pas = v->pPassengers[s];
+				if (pas && pas != local && !MP_IsRemotePlayerPed(pas)) {
+					v->RemovePassenger(pas);
+					if (!MP_IsSyncedPed(pas)) {
+						CWorld::Remove(pas);
+						CWorld::RemoveReferencesToDeletedObject(pas);
+						delete pas;
+					}
+				}
+			}
+			CWorld::Remove(v);
+			CWorld::RemoveReferencesToDeletedObject(v);
+			delete v;
+		}
+	}
+
+	if (pPool) {
+		for (int32 idx = pPool->GetSize() - 1; idx >= 0; idx--) {
+			CPed *p = pPool->GetSlot(idx);
+			if (!p || p == local || MP_IsRemotePlayerPed(p) || MP_IsSyncedPed(p))
+				continue;
+			if (p->CharCreatedBy != RANDOM_CHAR)
+				continue;
+			if (p->bInVehicle && p->m_pMyVehicle && MP_IsPoolVehicleValid(p->m_pMyVehicle)) {
+				if (p->m_pMyVehicle->pDriver == p) p->m_pMyVehicle->RemoveDriver();
+				else p->m_pMyVehicle->RemovePassenger(p);
+				p->bInVehicle = false;
+				p->m_pMyVehicle = nil;
+			}
+			CWorld::Remove(p);
+			CWorld::RemoveReferencesToDeletedObject(p);
+			delete p;
+		}
+	}
+}
+
 bool MP_IsNearAnyPlayer2D(const CVector &pos, float maxDist)
 {
 	if (!gMp.initialized) return false;
 	float maxSq = maxDist * maxDist;
 	for (int32 i = 0; i < MP_MAX_PLAYERS; i++) {
 		const MpRemotePlayer &rp = gMp.players[i];
-		if (!rp.active) continue;
+		if (!rp.active || !rp.hasState) continue;
 		float dx = pos.x - rp.pos.x;
 		float dy = pos.y - rp.pos.y;
 		if (dx * dx + dy * dy < maxSq)
@@ -353,7 +471,7 @@ void MP_GetSpawnFocusCoors(CVector *inOutPos)
 	int32 choices[MP_MAX_PLAYERS];
 	choices[0] = -1;
 	for (int32 i = 0; i < MP_MAX_PLAYERS; i++) {
-		if (gMp.players[i].active && gMp.players[i].area == (uint8)CGame::currArea && count < MP_MAX_PLAYERS)
+		if (gMp.players[i].active && gMp.players[i].hasState && gMp.players[i].area == (uint8)CGame::currArea && count < MP_MAX_PLAYERS)
 			choices[count++] = i;
 	}
 	if (count <= 1) return;

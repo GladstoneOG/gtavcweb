@@ -2161,6 +2161,11 @@
       bridge.mpInit(1, true);
       bridge.mpSetPlayerInfo(1, state.localName, state.localSkin);
       bridge.mpSetOpenIslands(state.coopMode === 'open_sandbox' ? 2 : state.openIslands);
+    } else if (state.mode === 'client' && !wasm.clientPreInited) {
+      wasm.clientPreInited = true;
+      bridge.mpInit(2, false);
+      bridge.mpSetPlayerInfo(2, state.localName, state.localSkin);
+      bridge.mpSetOpenIslands(state.coopMode === 'open_sandbox' ? 2 : state.openIslands);
     }
 
     syncFrontendSettingsFromEngine();

@@ -12,10 +12,10 @@
 #include "Boat.h"
 
 #define MP_MAX_PLAYERS          4
-#define MP_MAX_SYNCED_VEHICLES  24
-#define MP_MAX_SYNCED_PEDS      32
+#define MP_MAX_SYNCED_VEHICLES  128
+#define MP_MAX_SYNCED_PEDS      64
 #define MP_MAX_SYNCED_PICKUPS   64
-#define MP_MAX_OUT_QUEUE        128
+#define MP_MAX_OUT_QUEUE        512
 #define MP_MAX_PACKET_SIZE      512
 #define MP_MAX_PLAYER_NAME      24
 
@@ -31,7 +31,9 @@ enum MpPacketType {
 	MP_PKT_PLAYER_META    = 9,
 	MP_PKT_SPAWN_REQ      = 10,
 	MP_PKT_REMOTE_CAR     = 11,
-	MP_PKT_WORLD_RESET    = 12
+	MP_PKT_WORLD_RESET    = 12,
+	MP_PKT_VEHICLE_REMOVE = 13,
+	MP_PKT_PED_REMOVE     = 14
 };
 
 enum MpActionFlags {
@@ -42,7 +44,9 @@ enum MpActionFlags {
 	MP_ACT_DUCKING        = 1 << 4,
 	MP_ACT_JUMPING        = 1 << 5,
 	MP_ACT_DEAD           = 1 << 6,
-	MP_ACT_AIMING         = 1 << 7
+	MP_ACT_AIMING         = 1 << 7,
+	MP_ACT_ENTERING_VEH   = 1 << 8,
+	MP_ACT_EXITING_VEH    = 1 << 9
 };
 
 enum MpSpawnReqKind {
@@ -94,6 +98,14 @@ struct MpRemotePlayer {
 	int32 netVehId;
 	int8 seatIdx;
 	uint8 area;
+	uint8 pedState;
+	uint8 moveState;
+	uint8 vehDoorCode;
+	uint8 animGroup;
+	int16 animId;
+	float animTime;
+	int32 lastDoorVehId;
+	uint8 lastDoorCode;
 
 	CPed *ped;
 	int32 blipHandle;
@@ -113,8 +125,14 @@ struct MpSyncedVehicle {
 	uint8 bombType;
 	uint8 tireMask;
 	uint8 area;
+	uint8 driverPeerId;
+	uint8 vflags;
+	uint16 npcDriverModel;
 	float health;
 	float rotorSpeed;
+	float steerAngle;
+	float gasPedal;
+	float brakePedal;
 
 	CVector pos;
 	CVector targetPos;
@@ -126,7 +144,9 @@ struct MpSyncedVehicle {
 
 	uint32 lastUpdateMs;
 	uint32 lastOwnedLocalMs;
+	uint32 releaseOwnerAtMs;
 	CVehicle *veh;
+	CPed *npcDriverPed;
 };
 
 struct MpSyncedPed {
@@ -134,9 +154,12 @@ struct MpSyncedPed {
 	int32 netPedId;
 	int32 ownerPeerId;
 	uint16 modelIndex;
+	uint8 pedType;
 	uint8 weapon;
 	uint8 health;
 	uint8 pedState;
+	uint8 moveState;
+	uint8 flags;
 	uint8 area;
 
 	CVector pos;
@@ -164,6 +187,9 @@ struct MpState {
 	uint32 lastVehSendMs;
 	uint32 lastPedSendMs;
 	uint32 lastWorldSendMs;
+	uint32 lastPurgeMs;
+	uint32 vehScanCursor;
+	uint32 pedScanCursor;
 	int32 nextNetVehId;
 	int32 nextNetPedId;
 
@@ -209,6 +235,7 @@ void MP_UpdateRemotePlayersAfter(float dt);
 void MP_HandlePlayerStatePacket(int32 fromPeerId, const uint8 *data, int32 len);
 void MP_HandlePlayerMetaPacket(int32 fromPeerId, const uint8 *data, int32 len);
 void MP_HandlePedSyncPacket(int32 fromPeerId, const uint8 *data, int32 len);
+void MP_HandlePedRemovePacket(int32 fromPeerId, const uint8 *data, int32 len);
 void MP_SendLocalPlayerState(void);
 void MP_TickAmbientPedsBefore(float dt);
 void MP_TickAmbientPedsAfter(float dt);
@@ -222,9 +249,11 @@ void MP_TickVehiclesBefore(float dt);
 void MP_TickVehiclesAfter(float dt);
 void MP_HandleVehicleSyncPacket(int32 fromPeerId, const uint8 *data, int32 len);
 void MP_HandleVehicleClaimPacket(int32 fromPeerId, const uint8 *data, int32 len);
+void MP_HandleVehicleRemovePacket(int32 fromPeerId, const uint8 *data, int32 len);
 void MP_CleanupRemoteVehicles(void);
 int32 MP_FindVehicleSlotByPtr(CVehicle *veh);
 int32 MP_FindVehicleSlotByNetId(int32 netVehId);
+int32 MP_TrackLocalVehicle(CVehicle *veh);
 CVehicle *MP_GetVehiclePtrByNetId(int32 netVehId);
 uint8 MP_ReadVehicleTireMask(CVehicle *veh);
 void MP_ApplyVehicleTireMask(CVehicle *veh, uint8 mask);
@@ -257,8 +286,12 @@ uint8 *MP_ExportSaveData(int32 *outSize);
 bool MP_ImportSaveData(const uint8 *data, int32 size);
 
 // Engine query hooks
+bool MP_IsClientSession(void);
 bool MP_IsRemotePlayerPed(const CPed *ped);
+bool MP_IsSyncedPed(const CPed *ped);
 bool MP_IsSyncedVehicle(const CVehicle *veh);
+bool MP_IsVehicleOccupiedByPlayer(const CVehicle *veh);
+void MP_PurgeUnsyncedClientEntities(void);
 bool MP_IsNearAnyPlayer2D(const CVector &pos, float maxDist);
 void MP_GetSpawnFocusCoors(CVector *inOutPos);
 

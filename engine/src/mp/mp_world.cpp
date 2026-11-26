@@ -276,10 +276,23 @@ void MP_HandleSpawnReqPacket(int32 fromPeerId, const uint8 *data, int32 len)
 		memcpy(&dist, data + 6, 4);
 		for (int32 i = 0; i < MP_MAX_PLAYERS; i++) {
 			if (gMp.players[i].active && gMp.players[i].peerId == fromPeerId) {
-				CVector pos = gMp.players[i].pos + CVector(Cos(gMp.players[i].heading + HALFPI), Sin(gMp.players[i].heading + HALFPI), 0.0f) * dist + CVector(0, 0, 1.0f);
-				// Temporarily spawn near requesting player
+				float hdg = gMp.players[i].heading;
+				CVector fwd(-Sin(hdg), Cos(hdg), 0.0f);
+				CVector pos = gMp.players[i].pos + fwd * dist + CVector(0, 0, 1.25f);
+				bool foundZ = false;
+				float gz = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 5.0f, &foundZ);
+				if (foundZ) pos.z = gz + 1.0f;
 				CVehicle *v = MP_SpawnVehicleLocal(modelIndex, dist);
-				if (v) v->SetPosition(pos);
+				if (v) {
+					v->GetMatrix().SetRotateZOnly(hdg + HALFPI);
+					v->SetPosition(pos);
+					v->UpdateRwFrame();
+					int32 slot = MP_FindVehicleSlotByPtr(v);
+					if (slot >= 0) {
+						gMp.vehicles[slot].pos = pos;
+						gMp.vehicles[slot].targetPos = pos;
+					}
+				}
 				break;
 			}
 		}
@@ -311,7 +324,7 @@ void MP_HandleShotFiredPacket(int32 fromPeerId, const uint8 *data, int32 len)
 {
 	if (len < 31) return;
 	MpRemotePlayer *rp = MP_GetOrCreateRemotePlayer(fromPeerId);
-	if (!rp || !rp->ped) return;
+	if (!rp || !rp->ped || !MP_IsPoolPedValid(rp->ped)) return;
 	uint8 wt = data[1];
 	CVector src, dir;
 	float dmg = 10.0f;
@@ -323,9 +336,18 @@ void MP_HandleShotFiredPacket(int32 fromPeerId, const uint8 *data, int32 len)
 	eWeaponType ewt = (eWeaponType)Clamp((int32)wt, 0, WEAPONTYPE_TOTALWEAPONS - 1);
 	CWeaponInfo *info = CWeaponInfo::GetWeaponInfo(ewt);
 	if (info && info->m_eWeaponFire == WEAPON_FIRE_INSTANT_HIT) {
-		CVector endPos = src + dir * info->m_fRange;
 		CBulletInfo::AddBullet(rp->ped, ewt, src, dir * 1.5f);
-		(void)endPos;
+	} else if (info && info->m_eWeaponFire == WEAPON_FIRE_MELEE) {
+		CColPoint cp;
+		CEntity *hitEnt = nil;
+		if (CWorld::ProcessLineOfSight(src, src + dir * 2.2f, cp, hitEnt, false, true, true, true, false, false, false)) {
+			if (hitEnt && hitEnt != rp->ped) {
+				if (hitEnt->IsPed())
+					((CPed *)hitEnt)->InflictDamage(rp->ped, ewt, dmg, PEDPIECE_TORSO, 0);
+				else if (hitEnt->IsVehicle())
+					((CVehicle *)hitEnt)->InflictDamage(rp->ped, ewt, dmg);
+			}
+		}
 	}
 }
 
