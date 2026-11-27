@@ -44,12 +44,6 @@ static bool MP_IsLocomotionAnimId(int32 animId)
 	case ANIM_STD_IDLE_TIRED:
 	case ANIM_STD_RUNSTOP1:
 	case ANIM_STD_RUNSTOP2:
-	case ANIM_STD_JUMP_LAUNCH:
-	case ANIM_STD_JUMP_GLIDE:
-	case ANIM_STD_JUMP_LAND:
-	case ANIM_STD_FALL:
-	case ANIM_STD_FALL_GLIDE:
-	case ANIM_STD_FALL_LAND:
 		return true;
 	default:
 		return false;
@@ -902,6 +896,13 @@ void MP_TickAmbientPedsBefore(float dt)
 		sp.lastHealth = sp.health;
 		sp.prevFlags = sp.flags;
 
+		if ((sp.actionFlags & 1) && (now - sp.lastShotFxMs) > 160u) {
+			sp.lastShotFxMs = now;
+			CVector flashPos = p->GetPosition() + p->GetForward() * 0.55f + CVector(0.0f, 0.0f, 0.45f);
+			CParticle::AddParticle(PARTICLE_GUNFLASH, flashPos, p->GetForward() * 0.35f, nil, 0.16f);
+			DMAudio.PlayOneShot(p->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
+		}
+
 		float dtExtrap = Min((float)(now - sp.lastUpdateMs) * 0.001f, 0.12f);
 		CVector predPos = sp.targetPos + sp.vel * (dtExtrap * 50.0f);
 		float blend = Clamp(dt * 14.0f, 0.18f, 0.72f);
@@ -921,6 +922,9 @@ void MP_TickAmbientPedsBefore(float dt)
 		p->UpdateRwFrame();
 		p->m_fHealth = Clamp((float)sp.health, 1.0f, 100.0f);
 		p->bIsDucking = (sp.flags & 2) != 0;
+		p->bIsShooting = (sp.actionFlags & 1) != 0;
+		p->bIsAimingGun = (sp.actionFlags & 2) != 0;
+		p->bIsAttacking = (sp.actionFlags & 4) != 0;
 
 		if (sp.weapon < WEAPONTYPE_TOTALWEAPONS && p->GetWeapon()->m_eWeaponType != (eWeaponType)sp.weapon) {
 			if (sp.weapon == WEAPONTYPE_UNARMED) p->SetCurrentWeapon(WEAPONTYPE_UNARMED);
@@ -929,11 +933,42 @@ void MP_TickAmbientPedsBefore(float dt)
 				p->SetCurrentWeapon((eWeaponType)sp.weapon);
 			}
 		}
+		p->RestartNonPartialAnims();
 		eMoveState ms = (eMoveState)sp.moveState;
 		if (ms == PEDMOVE_NONE) ms = (sp.vel.Magnitude2D() > 0.005f) ? PEDMOVE_WALK : PEDMOVE_STILL;
 		p->SetMoveState(ms);
-		if (p->m_nPedState != PED_FALL && p->m_nPedState != PED_DIE) {
+		if (p->bIsDucking) {
+			p->SetDuck(200);
+		} else if (sp.animId < 0 && p->m_nPedState != PED_FALL && p->m_nPedState != PED_DIE) {
 			p->SetMoveAnim();
+		}
+		if (sp.animId >= 0 && sp.animGroup < NUM_ANIM_ASSOC_GROUPS && MP_EnsureAnimGroupLoaded((AssocGroupId)sp.animGroup)) {
+			if (sp.lastAnimId >= 0 && sp.lastAnimId != sp.animId) {
+				CAnimBlendAssociation *prev = RpAnimBlendClumpGetAssociation(p->GetClump(), sp.lastAnimId);
+				if (prev) {
+					prev->blendDelta = -8.0f;
+					prev->flags |= ASSOC_DELETEFADEDOUT;
+				}
+			}
+			CAnimBlendAssociation *ca = RpAnimBlendClumpGetAssociation(p->GetClump(), sp.animId);
+			if (!ca || ca->blendDelta < 0.0f) {
+				ca = CAnimManager::BlendAnimation(p->GetClump(), (AssocGroupId)sp.animGroup, (AnimationId)sp.animId, 8.0f);
+			}
+			if (ca) {
+				ca->callbackType = CAnimBlendAssociation::CB_NONE;
+				ca->SetRun();
+				if (fabsf(ca->currentTime - sp.animTime) > 0.12f && sp.animTime >= 0.0f && ca->hierarchy && sp.animTime <= ca->hierarchy->totalLength) {
+					ca->SetCurrentTime(sp.animTime);
+				}
+			}
+			sp.lastAnimId = sp.animId;
+		} else if (sp.lastAnimId >= 0) {
+			CAnimBlendAssociation *prev = RpAnimBlendClumpGetAssociation(p->GetClump(), sp.lastAnimId);
+			if (prev) {
+				prev->blendDelta = -8.0f;
+				prev->flags |= ASSOC_DELETEFADEDOUT;
+			}
+			sp.lastAnimId = -1;
 		}
 	}
 }
@@ -952,13 +987,12 @@ void MP_TickAmbientPedsAfter(float)
 	int32 sz = pool->GetSize();
 	if (sz <= 0) return;
 
-	// Batched packet: [type(1), count(1), (netPedId(4), mi(2), ptype(1), flags(1), pos(12), vx16(2), vy16(2), h16(2), hp(1), wpn(1), moveState(1), area(1))]
-	// = 2 + 30 * 15 = 452 bytes <= 512
+	// Batched packet: 2 + 35 * 14 = 492 bytes <= 512
 	uint8 pkt[MP_MAX_PACKET_SIZE];
 	int32 p = 2;
 	uint8 count = 0;
 
-	for (int32 step = 0; step < sz && count < 15; step++) {
+	for (int32 step = 0; step < sz && count < 14; step++) {
 		int32 idx = (int32)((gMp.pedScanCursor + (uint32)step) % (uint32)sz);
 		CPed *ped = pool->GetSlot(idx);
 		if (!ped || ped == local || MP_IsRemotePlayerPed(ped) || ped->bInVehicle) continue;
@@ -969,6 +1003,32 @@ void MP_TickAmbientPedsAfter(float)
 		uint16 mi = (uint16)ped->GetModelIndex();
 		uint8 ptype = (uint8)ped->m_nPedType;
 		uint8 pflags = (ped->DyingOrDead() ? 1 : 0) | (ped->bIsDucking ? 2 : 0) | ((ped->CharCreatedBy == MISSION_CHAR) ? 4 : 0);
+		uint8 pflags2 = (ped->bIsShooting ? 1 : 0)
+			| ((ped->bIsAimingGun || ped->m_nPedState == PED_AIM_GUN) ? 2 : 0)
+			| ((ped->m_nPedState == PED_FIGHT || ped->m_nPedState == PED_ATTACK || ped->bIsAttacking) ? 4 : 0)
+			| ((ped->m_nPedState == PED_JUMP || ped->bIsInTheAir) ? 8 : 0)
+			| ((ped->m_nPedState == PED_FALL || ped->m_nPedState == PED_GETUP) ? 16 : 0);
+
+		uint8 animGrp = 0;
+		int16 animId = -1;
+		uint8 animTime8 = 0;
+		if (!ped->DyingOrDead() && ped->GetClump()) {
+			CAnimBlendAssociation *best = nil;
+			float bestW = 0.05f;
+			for (CAnimBlendAssociation *a = RpAnimBlendClumpGetFirstAssociation(ped->GetClump()); a; a = RpAnimBlendGetNextAssociation(a)) {
+				if (MP_IsLocomotionAnimId(a->animId)) continue;
+				if (a->blendDelta >= 0.0f && a->blendAmount > bestW) {
+					bestW = a->blendAmount;
+					best = a;
+				}
+			}
+			if (best) {
+				animGrp = (uint8)Clamp((int32)best->groupId, 0, 255);
+				animId = (int16)best->animId;
+				animTime8 = (uint8)Clamp((int32)(best->currentTime * 20.0f), 0, 255);
+			}
+		}
+
 		CVector pos = ped->GetPosition();
 		int16 vx16 = (int16)Clamp((int32)(ped->m_vecMoveSpeed.x * 1000.0f), -32000, 32000);
 		int16 vy16 = (int16)Clamp((int32)(ped->m_vecMoveSpeed.y * 1000.0f), -32000, 32000);
@@ -990,6 +1050,10 @@ void MP_TickAmbientPedsAfter(float)
 		pkt[p++] = wpn;
 		pkt[p++] = ms;
 		pkt[p++] = area;
+		pkt[p++] = pflags2;
+		pkt[p++] = animGrp;
+		memcpy(pkt + p, &animId, 2); p += 2;
+		pkt[p++] = animTime8;
 		count++;
 	}
 	gMp.pedScanCursor = (gMp.pedScanCursor + 9) % (uint32)sz;
@@ -1003,10 +1067,10 @@ void MP_TickAmbientPedsAfter(float)
 
 void MP_HandlePedSyncPacket(int32 fromPeerId, const uint8 *data, int32 len)
 {
-	if (gMp.isHost || len < 32) return;
+	if (gMp.isHost || len < 37) return;
 	uint8 count = data[1];
 	int32 p = 2;
-	if (count == 0 || count > 16 || len < 2 + (int32)count * 30) return;
+	if (count == 0 || count > 16 || len < 2 + (int32)count * 35) return;
 
 	uint32 now = CTimer::GetTimeInMilliseconds();
 	for (uint8 n = 0; n < count; n++) {
@@ -1015,6 +1079,7 @@ void MP_HandlePedSyncPacket(int32 fromPeerId, const uint8 *data, int32 len)
 		CVector pos;
 		int16 vx16 = 0, vy16 = 0;
 		uint16 h16 = 0;
+		int16 animId = -1;
 		memcpy(&netId, data + p, 4); p += 4;
 		memcpy(&mi, data + p, 2); p += 2;
 		uint8 ptype = data[p++];
@@ -1027,6 +1092,10 @@ void MP_HandlePedSyncPacket(int32 fromPeerId, const uint8 *data, int32 len)
 		uint8 wpn = data[p++];
 		uint8 ms = data[p++];
 		uint8 area = data[p++];
+		uint8 pflags2 = data[p++];
+		uint8 animGrp = data[p++];
+		memcpy(&animId, data + p, 2); p += 2;
+		uint8 animTime8 = data[p++];
 
 		int32 slot = -1, freeSlot = -1, deadSlot = -1;
 		for (int32 i = 0; i < MP_MAX_SYNCED_PEDS; i++) {
@@ -1060,9 +1129,14 @@ void MP_HandlePedSyncPacket(int32 fromPeerId, const uint8 *data, int32 len)
 		sp.weapon = wpn;
 		sp.moveState = ms;
 		sp.area = area;
+		sp.actionFlags = pflags2;
+		sp.animGroup = animGrp;
+		sp.animId = animId;
+		sp.animTime = (float)animTime8 * 0.05f;
 		if (fresh) {
 			sp.lastHealth = hp;
 			sp.prevFlags = pflags;
+			sp.lastAnimId = -1;
 		}
 		if (fresh || (sp.pos - sp.targetPos).MagnitudeSqr() > 400.0f) {
 			sp.pos = sp.targetPos;
