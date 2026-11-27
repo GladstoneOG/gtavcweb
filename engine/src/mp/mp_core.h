@@ -33,7 +33,9 @@ enum MpPacketType {
 	MP_PKT_REMOTE_CAR     = 11,
 	MP_PKT_WORLD_RESET    = 12,
 	MP_PKT_VEHICLE_REMOVE = 13,
-	MP_PKT_PED_REMOVE     = 14
+	MP_PKT_PED_REMOVE     = 14,
+	MP_PKT_DAMAGE         = 15,
+	MP_PKT_EXPLOSION      = 16
 };
 
 enum MpActionFlags {
@@ -46,7 +48,8 @@ enum MpActionFlags {
 	MP_ACT_DEAD           = 1 << 6,
 	MP_ACT_AIMING         = 1 << 7,
 	MP_ACT_ENTERING_VEH   = 1 << 8,
-	MP_ACT_EXITING_VEH    = 1 << 9
+	MP_ACT_EXITING_VEH    = 1 << 9,
+	MP_ACT_ATTACKING      = 1 << 10
 };
 
 enum MpSpawnReqKind {
@@ -111,6 +114,7 @@ struct MpRemotePlayer {
 	int32 blipHandle;
 	uint32 lastShotFxMs;
 	uint8 lastWeaponGiven;
+	int16 lastCombatAnimId;
 };
 
 struct MpSyncedVehicle {
@@ -170,6 +174,8 @@ struct MpSyncedPed {
 
 	uint32 lastUpdateMs;
 	CPed *ped;
+	uint8 lastHealth;
+	uint8 prevFlags;
 };
 
 struct MpState {
@@ -275,8 +281,16 @@ void MP_HandleWeatherTimePacket(int32 fromPeerId, const uint8 *data, int32 len);
 void MP_HandleSpawnReqPacket(int32 fromPeerId, const uint8 *data, int32 len);
 void MP_HandleRemoteCarPacket(int32 fromPeerId, const uint8 *data, int32 len);
 void MP_HandleWorldResetPacket(int32 fromPeerId, const uint8 *data, int32 len);
+void MP_HandleDamagePacket(int32 fromPeerId, const uint8 *data, int32 len);
+void MP_HandleExplosionPacket(int32 fromPeerId, const uint8 *data, int32 len);
 
-void MP_OnShotFired(int32 weaponType, const CVector &src, const CVector &dir, CEntity *target, float dmg, bool isDriveBy);
+void MP_OnShotFired(int32 weaponType, const CVector &src, const CVector &dir, CEntity *target, float dmg, bool isDriveBy, uint8 shotKind = 0, float power = 0.0f);
+void MP_OnPedDamaged(CPed *victim, CEntity *attacker, int32 weaponType, float damage, int32 pedPiece, uint8 direction);
+void MP_OnVehicleDamaged(CVehicle *veh, CEntity *attacker, int32 weaponType, float damage, const CVector &pos);
+void MP_OnExplosion(CEntity *culprit, int32 expType, const CVector &pos, float radius);
+bool MP_ShouldSuppressExplosionDamage(CEntity *victim, CEntity *attacker, int32 method);
+int32 MP_FindRemotePlayerPeerByPed(const CPed *ped);
+int32 MP_FindSyncedPedNetIdByPtr(const CPed *ped);
 void MP_OnPickupEvent(int32 slot, uint8 action, int32 modelIndex, uint8 type, int32 quantity, const CVector &pos);
 void MP_OnGarageAction(int32 garageIdx, uint8 action, CVehicle *veh, uint8 col1, uint8 col2, uint8 extra);
 void MP_OnRemoteCarEvent(uint8 action, const CVector &pos, float heading, CVehicle *veh);
@@ -290,6 +304,7 @@ bool MP_IsClientSession(void);
 bool MP_IsRemotePlayerPed(const CPed *ped);
 bool MP_IsSyncedPed(const CPed *ped);
 bool MP_IsSyncedVehicle(const CVehicle *veh);
+bool MP_IsRemoteControlledVehicle(const CVehicle *veh);
 bool MP_IsVehicleOccupiedByPlayer(const CVehicle *veh);
 void MP_PurgeUnsyncedClientEntities(void);
 bool MP_IsNearAnyPlayer2D(const CVector &pos, float maxDist);

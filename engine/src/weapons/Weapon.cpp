@@ -374,14 +374,6 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				case WEAPONTYPE_M60:
 				case WEAPONTYPE_MINIGUN:
 					CStats::RoundsFiredByPlayer++;
-#ifdef MULTIPLAYER_COOP
-					if (shooter == FindPlayerPed()) {
-						CVector srcPos = source ? *source : shooter->GetPosition();
-						CVector dir = shooter->GetForward();
-						dir.Normalise();
-						MP_OnShotFired((int)m_eWeaponType, srcPos, dir, nil, (float)GetInfo()->m_nDamage, false);
-					}
-#endif
 					break;
 					
 				case WEAPONTYPE_GRENADE:
@@ -448,14 +440,6 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 		}
 
 		fired = FireMelee(shooter, *source);
-#ifdef MULTIPLAYER_COOP
-		if (fired && shooter == FindPlayerPed()) {
-			CVector srcPos = source ? *source : shooter->GetPosition();
-			CVector dir = shooter->GetForward();
-			dir.Normalise();
-			MP_OnShotFired((int)m_eWeaponType, srcPos, dir, nil, (float)GetInfo()->m_nDamage, false);
-		}
-#endif
 	}
 
 	if ( m_eWeaponType == WEAPONTYPE_UNARMED || m_eWeaponType == WEAPONTYPE_BASEBALLBAT )
@@ -525,6 +509,16 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 
 	if (shooterPed == FindPlayerPed())
 	{
+#ifdef MULTIPLAYER_COOP
+		{
+			static uint32 sLastMeleeMs = 0;
+			uint32 nowMs = CTimer::GetTimeInMilliseconds();
+			if (nowMs - sLastMeleeMs >= 180u) {
+				sLastMeleeMs = nowMs;
+				MP_OnShotFired((int)m_eWeaponType, fireSource, shooterPed->GetForward(), nil, (float)info->m_nDamage, false, 1, 0.0f);
+			}
+		}
+#endif
 		if (m_eWeaponType == WEAPONTYPE_GOLFCLUB || m_eWeaponType == WEAPONTYPE_NIGHTSTICK ||
 			(m_eWeaponType >= WEAPONTYPE_BASEBALLBAT && m_eWeaponType <= WEAPONTYPE_CHAINSAW))
 		{	
@@ -1163,6 +1157,14 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 
 	if ( shooter == FindPlayerPed() )
 	{
+#ifdef MULTIPLAYER_COOP
+		{
+			CVector mpDir = target - *fireSource;
+			if (mpDir.MagnitudeSqr() > 0.0001f) mpDir.Normalise();
+			else mpDir = shooter->GetForward();
+			MP_OnShotFired((int)m_eWeaponType, *fireSource, mpDir, victim, (float)info->m_nDamage, false, 0, 0.0f);
+		}
+#endif
 		if ( !(CTimer::GetFrameCounter() & 3) )
 			MakePedsJumpAtShot((CPhysical*)shooter, fireSource, &target);
 	}
@@ -2208,6 +2210,9 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 		source = *fireSource - DotProduct(source, shooter->GetForward()) * shooter->GetForward();
 	}
 
+	bool addedProj = false;
+	CVector projPos = *fireSource;
+	float projPower = power;
 	if ( !CWorld::GetIsLineOfSightClear(source, target, true, true, false, true, false, false, false) )
 	{
 		if ( m_eWeaponType != WEAPONTYPE_GRENADE )
@@ -2219,15 +2224,27 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 				source    = shooter->GetPosition() - shooter->GetForward();
 				source.z -= 0.4f;
 
-				if ( !CWorld::TestSphereAgainstWorld(source, 0.5f, nil, false, false, true, false, false, false) )
-					CProjectileInfo::AddProjectile(shooter, WEAPONTYPE_GRENADE, source, 0.0f);
-				else
+				if ( !CWorld::TestSphereAgainstWorld(source, 0.5f, nil, false, false, true, false, false, false) ) {
+					addedProj = CProjectileInfo::AddProjectile(shooter, WEAPONTYPE_GRENADE, source, 0.0f);
+					projPos = source;
+					projPower = 0.0f;
+				} else
 					CProjectileInfo::RemoveNotAdd(shooter, WEAPONTYPE_GRENADE, *fireSource);
 			}
 		}
 	}
 	else
-		CProjectileInfo::AddProjectile(shooter, projectileType, *fireSource, power);
+		addedProj = CProjectileInfo::AddProjectile(shooter, projectileType, *fireSource, power);
+
+#ifdef MULTIPLAYER_COOP
+	if (addedProj && shooter == FindPlayerPed()) {
+		CVector mpDir = (m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER)
+			? TheCamera.Cams[TheCamera.ActiveCam].Front
+			: shooter->GetForward();
+		if (mpDir.MagnitudeSqr() > 0.0001f) mpDir.Normalise();
+		MP_OnShotFired((int)projectileType, projPos, mpDir, nil, (float)GetInfo()->m_nDamage, false, 2, projPower);
+	}
+#endif
 	
 			
 	CWorld::pIgnoreEntity = nil;
@@ -2300,6 +2317,18 @@ CWeapon::FireAreaEffect(CEntity *shooter, CVector *fireSource)
 		
 	if ( shooter == (CEntity *)FindPlayerPed() )
 	{
+#ifdef MULTIPLAYER_COOP
+		{
+			static uint32 sLastFlameMs = 0;
+			uint32 nowMs = CTimer::GetTimeInMilliseconds();
+			if (nowMs - sLastFlameMs >= 100u) {
+				sLastFlameMs = nowMs;
+				CVector mpDir = dir;
+				if (mpDir.MagnitudeSqr() > 0.0001f) mpDir.Normalise();
+				MP_OnShotFired((int)m_eWeaponType, *fireSource, mpDir, nil, (float)info->m_nDamage, false, 3, 0.0f);
+			}
+		}
+#endif
 		for ( int32 i = 0; i < FindPlayerPed()->m_numNearPeds; i++ )
 		{
 			if ( FindPlayerPed()->m_nearPeds[i]->CharCreatedBy == RANDOM_CHAR )
@@ -2790,11 +2819,19 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 	}
 
 	if ( shooter == FindPlayerVehicle() )
+	{
+#ifdef MULTIPLAYER_COOP
+		CVector mpDir = target - source;
+		if (mpDir.MagnitudeSqr() > 0.0001f) mpDir.Normalise();
+		else mpDir = shooter->GetRight();
+		MP_OnShotFired((int)m_eWeaponType, source, mpDir, victim, (float)info->m_nDamage, true, 0, 0.0f);
+#endif
 #ifdef IMPROVED_MENU_AND_INPUT
 		CPad::GetPad(0)->StartShake_Distance(240, 0, 128, FindPlayerVehicle()->GetPosition().x, FindPlayerVehicle()->GetPosition().y, FindPlayerVehicle()->GetPosition().z);
 #else
 			CPad::GetPad(0)->StartShake_Distance(240, 128, FindPlayerVehicle()->GetPosition().x, FindPlayerVehicle()->GetPosition().y, FindPlayerVehicle()->GetPosition().z);
 #endif
+	}
 
 	return true;
 }

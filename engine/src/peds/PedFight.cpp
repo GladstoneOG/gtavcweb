@@ -25,6 +25,9 @@
 #include "Bike.h"
 #include "Glass.h"
 #include "SpecialFX.h"
+#ifdef MULTIPLAYER_COOP
+#include "mp_core.h"
+#endif
 
 uint16 nPlayerInComboMove;
 RpClump* flyingClumpTemp;
@@ -2825,6 +2828,14 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 
 	if (DyingOrDead())
 		return false;
+
+#ifdef MULTIPLAYER_COOP
+	if (MP_ShouldSuppressExplosionDamage(this, damagedBy, (int32)method))
+		return false;
+	if (damagedBy == FindPlayerPed() || (FindPlayerVehicle() && damagedBy == FindPlayerVehicle())) {
+		MP_OnPedDamaged(this, damagedBy, (int32)method, damage, (int32)pedPiece, direction);
+	}
+#endif
 
 	if (method == WEAPONTYPE_DROWNING && !bDrownsInWater)
 		return false;

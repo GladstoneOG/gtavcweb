@@ -123,6 +123,20 @@ CVehicle *MP_GetVehiclePtrByNetId(int32 netVehId)
 	return (veh && MP_IsPoolVehicleValid(veh)) ? veh : nil;
 }
 
+bool MP_IsRemoteControlledVehicle(const CVehicle *veh)
+{
+	if (!gMp.initialized || !veh) return false;
+	CPlayerPed *localPed = FindPlayerPed();
+	if (localPed && localPed->bInVehicle && localPed->m_pMyVehicle == veh && veh->pDriver == localPed)
+		return false;
+	for (int32 i = 0; i < MP_MAX_SYNCED_VEHICLES; i++) {
+		const MpSyncedVehicle &sv = gMp.vehicles[i];
+		if (sv.active && sv.veh == veh && sv.ownerPeerId != gMp.localPeerId)
+			return true;
+	}
+	return false;
+}
+
 static CVehicle *MP_CreateVehicleByModel(int32 modelIndex, const CVector &pos, bool isPlayerSpawn, bool lockFromCull)
 {
 	if (modelIndex < 130 || modelIndex > 236) return nil;
@@ -293,9 +307,18 @@ void MP_TickVehiclesBefore(float dt)
 		veh->bEngineOn = (sv.vflags & 1) != 0;
 		veh->bLightsOn = (sv.vflags & 2) != 0;
 		veh->m_bSirenOrAlarm = (sv.vflags & 4) != 0 || sv.siren != 0;
+		veh->bIsHandbrakeOn = (sv.vflags & 32) != 0;
+		veh->m_nCarHornTimer = (sv.vflags & 64) ? 1 : 0;
 		veh->m_area = (int8)sv.area;
 		veh->AutoPilot.m_nCarMission = MISSION_NONE;
 		veh->SetStatus((sv.vflags & 8) ? STATUS_WRECKED : STATUS_PHYSICS);
+		if (veh->IsCar() && !veh->bIsHandbrakeOn && veh->m_fBrakePedal <= 0.05f) {
+			CAutomobile *car = (CAutomobile *)veh;
+			for (int w = 0; w < 4; w++) {
+				if (car->m_aWheelState[w] == WHEEL_STATE_FIXED || car->m_aWheelState[w] == WHEEL_STATE_SKIDDING)
+					car->m_aWheelState[w] = WHEEL_STATE_NORMAL;
+			}
+		}
 		if ((sv.vflags & 8) && veh->GetStatus() != STATUS_WRECKED) {
 			veh->BlowUpCar(nil);
 		}
@@ -383,7 +406,9 @@ static void MP_WriteAndSendVehicleSync(MpSyncedVehicle &sv, CPed *localPed)
 		| (v->bLightsOn ? 2 : 0)
 		| (v->m_bSirenOrAlarm ? 4 : 0)
 		| (v->GetStatus() == STATUS_WRECKED ? 8 : 0)
-		| ((v->m_nDoorLock != CARLOCK_UNLOCKED && v->m_nDoorLock != CARLOCK_NOT_USED) ? 16 : 0);
+		| ((v->m_nDoorLock != CARLOCK_UNLOCKED && v->m_nDoorLock != CARLOCK_NOT_USED) ? 16 : 0)
+		| (v->bIsHandbrakeOn ? 32 : 0)
+		| (v->m_nCarHornTimer > 0 ? 64 : 0);
 	sv.tireMask = MP_ReadVehicleTireMask(v);
 	sv.area = (uint8)Clamp((int32)v->m_area, 0, 255);
 	sv.steerAngle = v->m_fSteerAngle;
@@ -435,6 +460,29 @@ void MP_TickVehiclesAfter(float)
 
 	if (localVeh && localVeh->pDriver != local) {
 		local->SetPedPositionInCar();
+	}
+
+	// Preserve synced vehicle control/light states after ProcessControl & before RenderEffects
+	for (int32 i = 0; i < MP_MAX_SYNCED_VEHICLES; i++) {
+		MpSyncedVehicle &sv = gMp.vehicles[i];
+		if (!sv.active || sv.ownerPeerId == gMp.localPeerId || !sv.veh || !MP_IsPoolVehicleValid(sv.veh)) continue;
+		if (sv.veh == localVeh && localVeh->pDriver == local) continue;
+		CVehicle *v = sv.veh;
+		v->m_fSteerAngle = sv.steerAngle;
+		v->m_fGasPedal = sv.gasPedal;
+		v->m_fBrakePedal = sv.brakePedal;
+		v->bEngineOn = (sv.vflags & 1) != 0;
+		v->bLightsOn = (sv.vflags & 2) != 0;
+		v->m_bSirenOrAlarm = (sv.vflags & 4) != 0 || sv.siren != 0;
+		v->bIsHandbrakeOn = (sv.vflags & 32) != 0;
+		v->m_nCarHornTimer = (sv.vflags & 64) ? 1 : 0;
+		if (v->IsCar() && !v->bIsHandbrakeOn && v->m_fBrakePedal <= 0.05f) {
+			CAutomobile *car = (CAutomobile *)v;
+			for (int w = 0; w < 4; w++) {
+				if (car->m_aWheelState[w] == WHEEL_STATE_FIXED || car->m_aWheelState[w] == WHEEL_STATE_SKIDDING)
+					car->m_aWheelState[w] = WHEEL_STATE_NORMAL;
+			}
+		}
 	}
 
 	uint32 now = CTimer::GetTimeInMilliseconds();

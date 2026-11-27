@@ -21,6 +21,9 @@
 #include "Text.h"
 #include "Camera.h"
 #include "SpecialFX.h"
+#include "Particle.h"
+#include "DMAudio.h"
+#include "soundlist.h"
 #include "RpAnimBlend.h"
 #include "AnimManager.h"
 #include "AnimBlendAssociation.h"
@@ -28,6 +31,50 @@
 #include "Radar.h"
 #include <cstring>
 #include <cmath>
+
+static bool MP_IsLocomotionAnimId(int32 animId)
+{
+	switch (animId) {
+	case ANIM_STD_WALK:
+	case ANIM_STD_RUN:
+	case ANIM_STD_RUNFAST:
+	case ANIM_STD_IDLE:
+	case ANIM_STD_IDLE_BIGGUN:
+	case ANIM_STD_IDLE_HBHB:
+	case ANIM_STD_IDLE_TIRED:
+	case ANIM_STD_RUNSTOP1:
+	case ANIM_STD_RUNSTOP2:
+	case ANIM_STD_JUMP_LAUNCH:
+	case ANIM_STD_JUMP_GLIDE:
+	case ANIM_STD_JUMP_LAND:
+	case ANIM_STD_FALL:
+	case ANIM_STD_FALL_GLIDE:
+	case ANIM_STD_FALL_LAND:
+		return true;
+	default:
+		return false;
+	}
+}
+
+int32 MP_FindRemotePlayerPeerByPed(const CPed *ped)
+{
+	if (!ped) return -1;
+	for (int32 i = 0; i < MP_MAX_PLAYERS; i++) {
+		if (gMp.players[i].active && gMp.players[i].ped == ped)
+			return gMp.players[i].peerId;
+	}
+	return -1;
+}
+
+int32 MP_FindSyncedPedNetIdByPtr(const CPed *ped)
+{
+	if (!ped) return -1;
+	for (int32 i = 0; i < MP_MAX_SYNCED_PEDS; i++) {
+		if (gMp.peds[i].active && gMp.peds[i].ped == ped)
+			return gMp.peds[i].netPedId;
+	}
+	return -1;
+}
 
 static uint8 MP_EncodeDoorCode(uint32 doorNode)
 {
@@ -479,6 +526,7 @@ void MP_UpdateRemotePlayersBefore(float dt)
 
 		if (rp.actionFlags & MP_ACT_DEAD) {
 			if (ped->m_nPedState != PED_DEAD) ped->SetDead();
+			rp.lastCombatAnimId = -1;
 		} else {
 			if (ped->m_nPedState == PED_DEAD) ped->m_nPedState = PED_IDLE;
 			ped->RestartNonPartialAnims();
@@ -495,6 +543,34 @@ void MP_UpdateRemotePlayersBefore(float dt)
 			ped->SetMoveAnim();
 			if ((rp.actionFlags & MP_ACT_JUMPING) && !RpAnimBlendClumpGetAssociation(ped->GetClump(), ANIM_STD_JUMP_LAUNCH)) {
 				CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAUNCH, 8.0f);
+			}
+			if (rp.animId >= 0 && rp.animGroup < NUM_ANIM_ASSOC_GROUPS && MP_EnsureAnimGroupLoaded((AssocGroupId)rp.animGroup)) {
+				if (rp.lastCombatAnimId >= 0 && rp.lastCombatAnimId != rp.animId) {
+					CAnimBlendAssociation *prev = RpAnimBlendClumpGetAssociation(ped->GetClump(), rp.lastCombatAnimId);
+					if (prev) {
+						prev->blendDelta = -8.0f;
+						prev->flags |= ASSOC_DELETEFADEDOUT;
+					}
+				}
+				CAnimBlendAssociation *ca = RpAnimBlendClumpGetAssociation(ped->GetClump(), rp.animId);
+				if (!ca || ca->blendDelta < 0.0f) {
+					ca = CAnimManager::BlendAnimation(ped->GetClump(), (AssocGroupId)rp.animGroup, (AnimationId)rp.animId, 8.0f);
+				}
+				if (ca) {
+					ca->callbackType = CAnimBlendAssociation::CB_NONE;
+					ca->SetRun();
+					if (fabsf(ca->currentTime - rp.animTime) > 0.10f && rp.animTime >= 0.0f && ca->hierarchy && rp.animTime <= ca->hierarchy->totalLength) {
+						ca->SetCurrentTime(rp.animTime);
+					}
+				}
+				rp.lastCombatAnimId = rp.animId;
+			} else if (rp.lastCombatAnimId >= 0) {
+				CAnimBlendAssociation *prev = RpAnimBlendClumpGetAssociation(ped->GetClump(), rp.lastCombatAnimId);
+				if (prev) {
+					prev->blendDelta = -8.0f;
+					prev->flags |= ASSOC_DELETEFADEDOUT;
+				}
+				rp.lastCombatAnimId = -1;
 			}
 		}
 	}
@@ -574,6 +650,8 @@ void MP_SendLocalPlayerState(void)
 	if (ped->m_nPedState == PED_DEAD || ped->m_nPedState == PED_DIE) flags |= MP_ACT_DEAD;
 	if (ped->m_nPedState == PED_JUMP || ped->bIsInTheAir) flags |= MP_ACT_JUMPING;
 	if (ped->bIsShooting) flags |= MP_ACT_FIRING;
+	if (ped->bIsAimingGun || ped->m_nPedState == PED_AIM_GUN) flags |= MP_ACT_AIMING;
+	if (ped->m_nPedState == PED_FIGHT || ped->m_nPedState == PED_ATTACK || ped->bIsAttacking || ped->bIsShooting) flags |= MP_ACT_ATTACKING;
 	if (ped->m_nMoveState == PEDMOVE_SPRINT) flags |= MP_ACT_SPRINTING;
 
 	int32 netVehId = -1;
@@ -614,6 +692,21 @@ void MP_SendLocalPlayerState(void)
 		animGroup = (uint8)Clamp((int32)va->groupId, 0, 255);
 		animId = va->animId;
 		animTime = va->currentTime;
+	} else if (!isSeated && !isEntering && !isExiting && (flags & (MP_ACT_ATTACKING | MP_ACT_AIMING | MP_ACT_FIRING)) && ped->GetClump()) {
+		CAnimBlendAssociation *best = nil;
+		float bestWeight = 0.05f;
+		for (CAnimBlendAssociation *a = RpAnimBlendClumpGetFirstAssociation(ped->GetClump()); a; a = RpAnimBlendGetNextAssociation(a)) {
+			if (MP_IsLocomotionAnimId(a->animId)) continue;
+			if (a->blendDelta >= 0.0f && a->blendAmount > bestWeight) {
+				bestWeight = a->blendAmount;
+				best = a;
+			}
+		}
+		if (best) {
+			animGroup = (uint8)Clamp((int32)best->groupId, 0, 255);
+			animId = (int16)best->animId;
+			animTime = best->currentTime;
+		}
 	}
 
 	pkt[p++] = hp;
@@ -790,12 +883,24 @@ void MP_TickAmbientPedsBefore(float dt)
 		p->m_area = (int8)sp.area;
 
 		if (sp.flags & 1) {
-			if (p->m_nPedState != PED_DEAD) {
+			if (!(sp.prevFlags & 1) && p->m_nPedState != PED_DEAD) {
+				p->m_fHealth = 0.0f;
+				p->SetDie(ANIM_STD_KO_FRONT, 4.0f, 0.0f);
+			} else if (p->m_nPedState != PED_DEAD) {
 				p->m_fHealth = 0.0f;
 				p->SetDead();
 			}
+			sp.lastHealth = 0;
+			sp.prevFlags = sp.flags;
 			continue;
 		}
+
+		if (sp.health < sp.lastHealth && sp.lastHealth > 0) {
+			p->StartFightDefend(0, HITLEVEL_HIGH, 10);
+			CParticle::AddParticle(PARTICLE_BLOOD, p->GetPosition() + CVector(0.0f, 0.0f, 0.35f), CVector(0.0f, 0.0f, 0.04f));
+		}
+		sp.lastHealth = sp.health;
+		sp.prevFlags = sp.flags;
 
 		float dtExtrap = Min((float)(now - sp.lastUpdateMs) * 0.001f, 0.12f);
 		CVector predPos = sp.targetPos + sp.vel * (dtExtrap * 50.0f);
@@ -827,7 +932,9 @@ void MP_TickAmbientPedsBefore(float dt)
 		eMoveState ms = (eMoveState)sp.moveState;
 		if (ms == PEDMOVE_NONE) ms = (sp.vel.Magnitude2D() > 0.005f) ? PEDMOVE_WALK : PEDMOVE_STILL;
 		p->SetMoveState(ms);
-		p->SetMoveAnim();
+		if (p->m_nPedState != PED_FALL && p->m_nPedState != PED_DIE) {
+			p->SetMoveAnim();
+		}
 	}
 }
 
@@ -953,6 +1060,10 @@ void MP_HandlePedSyncPacket(int32 fromPeerId, const uint8 *data, int32 len)
 		sp.weapon = wpn;
 		sp.moveState = ms;
 		sp.area = area;
+		if (fresh) {
+			sp.lastHealth = hp;
+			sp.prevFlags = pflags;
+		}
 		if (fresh || (sp.pos - sp.targetPos).MagnitudeSqr() > 400.0f) {
 			sp.pos = sp.targetPos;
 			sp.heading = sp.targetHeading;

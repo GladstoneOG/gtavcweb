@@ -250,6 +250,8 @@ void MP_PushNetPacket(int32 fromPeerId, const uint8 *data, int32 len)
 	case MP_PKT_WORLD_RESET:    MP_HandleWorldResetPacket(fromPeerId, data, len); break;
 	case MP_PKT_VEHICLE_REMOVE: MP_HandleVehicleRemovePacket(fromPeerId, data, len); break;
 	case MP_PKT_PED_REMOVE:     MP_HandlePedRemovePacket(fromPeerId, data, len); break;
+	case MP_PKT_DAMAGE:         MP_HandleDamagePacket(fromPeerId, data, len); break;
+	case MP_PKT_EXPLOSION:      MP_HandleExplosionPacket(fromPeerId, data, len); break;
 	default: break;
 	}
 }

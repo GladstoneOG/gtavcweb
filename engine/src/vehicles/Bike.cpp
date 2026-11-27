@@ -33,6 +33,9 @@
 #include "PlayerPed.h"
 #include "DamageManager.h"
 #include "Vehicle.h"
+#ifdef MULTIPLAYER_COOP
+#include "mp_core.h"
+#endif
 #include "Automobile.h"
 #include "Bike.h"
 #include "Debug.h"
@@ -331,8 +334,15 @@ CBike::ProcessControl(void)
 		return;
 
 	case STATUS_PHYSICS:
+#ifdef MULTIPLAYER_COOP
+		if (!MP_IsRemoteControlledVehicle(this)) {
+			CCarAI::UpdateCarAI(this);
+			CCarCtrl::SteerAICarWithPhysics(this);
+		}
+#else
 		CCarAI::UpdateCarAI(this);
 		CCarCtrl::SteerAICarWithPhysics(this);
+#endif
 		PlayHornIfNecessary();
 
 		bBalancedByRider = true;

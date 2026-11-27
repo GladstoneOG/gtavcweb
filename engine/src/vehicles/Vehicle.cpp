@@ -33,6 +33,9 @@
 #include "Weather.h"
 #include "Coronas.h"
 #include "SaveBuf.h"
+#ifdef MULTIPLAYER_COOP
+#include "mp_core.h"
+#endif
 
 bool CVehicle::bWheelsOnlyCheat;
 bool CVehicle::bAllDodosCheat;
@@ -1146,6 +1149,11 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 {
 	if (!bCanBeDamaged)
 		return;
+#ifdef MULTIPLAYER_COOP
+	MP_OnVehicleDamaged(this, damagedBy, (int32)weaponType, damage, pos);
+	if (MP_IsRemoteControlledVehicle(this))
+		return;
+#endif
 	if(GetStatus() == STATUS_PLAYER && CStats::GetPercentageProgress() >= 100.0f)
 		damage *= 0.5f;
 	if (GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer && (damagedBy != FindPlayerPed() && damagedBy != FindPlayerVehicle()))
